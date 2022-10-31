@@ -1,0 +1,1092 @@
+<?php
+class Shortcodes_Master_Smlts {
+
+	/**
+	 * Constructor
+	 */
+	function __construct() {
+		// Load textdomain
+		load_plugin_textdomain( 'smlts', false, dirname( plugin_basename( SMLTS_PLUGIN_FILE ) ) . '/lang/' );
+		// Reset cache on activation
+		if ( class_exists( 'Sm_Generator' ) ) register_activation_hook( SMLTS_PLUGIN_FILE, array( 'Sm_Generator', 'reset' ) );
+		// Init plugin
+		add_action( 'plugins_loaded', array( __CLASS__, 'init' ), 20 );
+		// Make plugin meta translation-ready
+		__( 'ShortcodesMaster', 'smlts' );
+		__( 'Shortcodes Master - Lizatom', 'smlts' );
+		__( 'Set of shortcodes by Lizatom. An addon for Shortcodes Master.', 'smlts' );
+	}
+
+	/**
+	 * Plugin init
+	 */
+	public static function init() {
+		// Check for SM
+		if ( !function_exists( 'shortcodes_master' ) ) {
+			// Show notice
+			add_action( 'admin_notices', array( __CLASS__, 'sm_notice' ) );
+			// Break init
+			return;
+		}
+		// Register assets
+		add_action( 'init', array( __CLASS__, 'assets' ) );
+		// Add new group to Generator
+		add_filter( 'sm/data/groups', array( __CLASS__, 'group' ) );
+		// Register new shortcodes
+		add_filter( 'sm/data/shortcodes', array( __CLASS__, 'data' ) );
+		// Add plugin meta links
+		add_filter( 'plugin_row_meta', array( __CLASS__, 'meta_links' ), 10, 2 );
+	}
+
+	/**
+	 * Install SM notice
+	 */
+	public static function sm_notice() {
+?><div class="updated">
+			<p><?php _e( 'Please install and activate latest version of <b>Shortcodes Master</b> to use it\'s addon <b>Shortcodes Master - Lizatom</b>.<br />Deactivate this addon to hide this message.', 'smlts' ); ?></p>
+			<p><a href="https://lizatom.com/wordpress-shortcodes-plugin/" target="_blank" class="button button-primary"><?php _e( 'Install Shortcodes Master', 'smlts' ); ?> &rarr;</a></p>	
+			</div><?php
+	}
+
+	public static function assets() { 
+		$plugins_url = plugins_url();
+
+		wp_register_style( 'smlts', plugins_url( 'assets/css/style.css',SMLTS_PLUGIN_FILE ), false, SMLTS_PLUGIN_VERSION, 'all' );
+		wp_register_script('jquery', includes_url('js/jquery/jquery.js'));       
+		wp_register_script( 'smlts', plugins_url( 'assets/js/smlts.js', SMLTS_PLUGIN_FILE ), array('jquery'), SMLTS_PLUGIN_VERSION, true );
+	}
+
+	public static function meta_links( $links, $file ) {
+		if ( $file === plugin_basename( SMLTS_PLUGIN_FILE ) ) 
+		$links[] = '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/" target="_blank">' . __( 'Help', 'smlts' ) . '</a>';
+		return $links;
+	}
+
+	/**
+	 * Add new group to the Generator
+	 */
+	public static function group( $groups ) {
+		$groups['lizatom'] = __( 'Lizatom', 'smlts' );
+		return $groups;
+	}
+
+	/**
+	 * Color shift a hex value by a specific percentage factor
+	 *
+	 * @param string $supplied_hex Any valid hex value. Short forms e.g. #333 accepted.
+	 * @param string $shift_method How to shift the value e.g( +,up,lighter,>)
+	 * @param integer $percentage Percentage in range of [0-100] to shift provided hex value by
+	 * @return string shifted hex value
+	 * @version 1.0 2008-03-28
+	 */
+	function lt_hex_shift( $supplied_hex, $shift_method, $percentage = 50 ) {
+		$shifted_hex_value = null;
+		$valid_shift_option = FALSE;
+		$current_set = 1;
+		$RGB_values = array( );
+		$valid_shift_lizatom_args = array( 'up', '+', 'lighter', '>' );
+		$valid_shift_down_args = array( 'down', '-', 'darker', '<' );
+		$shift_method = strtolower( trim( $shift_method ) );
+
+		// Check Factor
+		if ( !is_numeric( $percentage ) || ($percentage = ( int ) $percentage) < 0 || $percentage > 100 ) {
+			trigger_error( "Invalid factor", E_USER_ERROR );
+		}
+
+		// Check shift method
+		foreach ( array( $valid_shift_down_args, $valid_shift_lizatom_args ) as $options ) {
+			foreach ( $options as $method ) {
+				if ( $method == $shift_method ) {
+					$valid_shift_option = !$valid_shift_option;
+					$shift_method = ( $current_set === 1 ) ? '+' : '-';
+					break 2;
+				}
+			}
+			++$current_set;
+		}
+
+		if ( !$valid_shift_option ) {
+			trigger_error( "Invalid shift method", E_USER_ERROR );
+		}
+
+		// Check Hex string
+		switch ( strlen( $supplied_hex = ( str_replace( '#', '', trim( $supplied_hex ) ) ) ) ) {
+			case 3:
+				if ( preg_match( '/^([0-9a-f])([0-9a-f])([0-9a-f])/i', $supplied_hex ) ) {
+					$supplied_hex = preg_replace( '/^([0-9a-f])([0-9a-f])([0-9a-f])/i', '\\1\\1\\2\\2\\3\\3', $supplied_hex );
+				} else {
+					trigger_error( "Invalid hex value", E_USER_ERROR );
+				}
+				break;
+			case 6:
+				if ( !preg_match( '/^[0-9a-f]{2}[0-9a-f]{2}[0-9a-f]{2}$/i', $supplied_hex ) ) {
+					trigger_error( "Invalid hex value", E_USER_ERROR );
+				}
+				break;
+			default:
+				trigger_error( "Invalid hex length", E_USER_ERROR );
+		}
+
+		// Start shifting
+		$RGB_values['R'] = hexdec( $supplied_hex[0] . $supplied_hex[1] );
+		$RGB_values['G'] = hexdec( $supplied_hex[2] . $supplied_hex[3] );
+		$RGB_values['B'] = hexdec( $supplied_hex[4] . $supplied_hex[5] );
+
+		foreach ( $RGB_values as $c => $v ) {
+			switch ( $shift_method ) {
+				case '-':
+					$amount = round( ((255 - $v) / 100) * $percentage ) + $v;
+					break;
+				case '+':
+					$amount = $v - round( ($v / 100) * $percentage );
+					break;
+				default:
+					trigger_error( "Oops. Unexpected shift method", E_USER_ERROR );
+			}
+
+			$shifted_hex_value .= $current_value = (
+				strlen( $decimal_to_hex = dechex( $amount ) ) < 2
+				) ? '0' . $decimal_to_hex : $decimal_to_hex;
+		}
+
+		return '#' . $shifted_hex_value;
+	}
+	
+
+	/**
+	 * New shortcodes data
+	 */
+	public static function data( $shortcodes ) {
+
+		$fancy_icons = array(
+			'accept', 'add', 'arrow_down', 'arrow_redo', 'arrow_refresh', 'arrow_undo', 'arrow_up', 'cart', 'cog', 'cross', 'cut', 'date', 'decline', 'delete', 'disk', 'dot', 'email', 'erase', 'find', 'forward_blue', 'heart', 'help', 'house', 'information', 'magnifier', 'package_down', 'page_white_copy', 'paste_plain', 'pause_blue', 'pencil', 'play', 'printer', 'reload', 'resultset_first', 'resultset_last', 'resultset_next', 'resultset_previous', 'rewind_blue', 'stop_blue', 'thumb_down', 'thumb_up', 'tick', 'user', 'wand', 'wrench');
+		$list_icons = array('cross', 'tick', 'play', 'thumb_up', 'dot',
+'bullet_add', 'bullet_arrow_bottom', 'bullet_arrow_down', 'bullet_arrow_left', 'bullet_arrow_left_2', 'bullet_arrow_right', 'bullet_arrow_right_2', 'bullet_arrow_top', 'bullet_arrow_up', 'bullet_black', 'bullet_blue', 'bullet_delete', 'bullet_disk', 'bullet_error', 'bullet_feed', 'bullet_go', 'bullet_green', 'bullet_key', 'bullet_orange', 'bullet_picture', 'bullet_pink', 'bullet_purple', 'bullet_red', 'bullet_star', 'bullet_toggle_minus', 'bullet_toggle_plus', 'bullet_white', 'bullet_wrench', 'bullet_yellow');
+
+		$infobox_icons = array('success', 'warning', 'tip', 'error', 'secure' , 'info', 'message', 'download', 'purchase', 'print');
+		$icons_fatcow = array('32_bit', '3d_glasses', '64_bit', 'accept', 'accordion', 'account_balances', 'action_log', 'active_sessions', 'add', 'administrator', 'advanced_data_grid', 'advertising', 'agp', 'aim_messenger', 'alarm_bell', 'alitalk', 'all_right_reserved', 'american_express', 'anchor', 'android', 'angel', 'anti_xss', 'aol_mail', 'aol_messenger', 'apple', 'apple_corp', 'apple_half', 'application', 'application_add', 'application_cascade', 'application_control_bar', 'application_delete', 'application_double', 'application_edit', 'application_error', 'application_form', 'application_form_add', 'application_form_delete', 'application_form_edit', 'application_form_magnify', 'application_from_storage', 'application_get', 'application_go', 'application_home', 'application_key', 'application_lightning', 'application_link', 'application_osx', 'application_osx_terminal', 'application_put', 'application_side_boxes', 'application_side_contract', 'application_side_expand', 'application_side_list', 'application_side_tree', 'application_split', 'application_tile_horizontal', 'application_tile_vertical', 'application_view_columns', 'application_view_detail', 'application_view_gallery',
+			'application_view_icons', 'application_view_list', 'application_view_tile', 'application_xp', 'application_xp_terminal', 'arch_linux', 'areachart', 'arrow_branch', 'arrow_divide', 'arrow_down', 'arrow_in', 'arrow_inout', 'arrow_join', 'arrow_left', 'arrow_merge', 'arrow_out', 'arrow_redo', 'arrow_refresh', 'arrow_refresh_small', 'arrow_right', 'arrow_rotate_anticlockwise', 'arrow_rotate_clockwise', 'arrow_switch', 'arrow_turn_left', 'arrow_turn_right', 'arrow_undo', 'arrow_up', 'artwork', 'ask_and_answer', 'asterisk_orange', 'asterisk_yellow', 'atm', 'attach', 'attributes_display', 'attribution', 'auction_hammer_gavel', 'autos', 'award_star_add', 'award_star_bronze_1', 'award_star_bronze_2', 'award_star_bronze_3', 'award_star_delete', 'award_star_gold_1', 'award_star_gold_2', 'award_star_gold_3', 'award_star_silver_1', 'award_star_silver_2', 'award_star_silver_3', 'backpack', 'backup_manager', 'balance', 'balance_unbalance', 'ballon', 'baloon', 'baloon_2', 'baloon_2_empty', 'bandaid', 'bank', 'barchart', 'barcode', 'basket', 'basket_add', 'basket_delete', 'basket_edit', 'basket_error', 'basket_go', 'basket_put', 'basket_remove', 'battery', 'battery_charge', 'battery_full', 'battery_half', 'battery_low', 'battery_plug', 'bedo', 'beer', 'bell', 'bell_add', 'bell_delete', 'bell_error', 'bell_go', 'bell_link', 'billiard_marker', 'bin', 'bin_closed', 'bin_empty', 'bios', 'blackberry', 'blackberry_messenger', 'blackberry_white', 'blackboard_drawing', 'blackboard_empty', 'blackboard_steps', 'blackboard_sum', 'blogger', 'blogs', 'bluetooth', 'bomb', 'book', 'book_add', 'book_addresses', 'book_delete', 'book_edit', 'book_error', 'book_go', 'book_keeping', 'book_key', 'book_link', 'book_next', 'book_open', 'book_picture', 'book_previous', 'book_spelling', 'bookmark', 'books', 'bookshelf', 'border_1', 'border_1_bottom', 'border_1_hor', 'border_1_left', 'border_1_middle', 'border_1_none', 'border_1_outer', 'border_1_right', 'border_1_top', 'border_1_ver', 'border_1d_around', 'border_1d_bottom', 'border_1d_left', 'border_1d_right', 'border_1d_top', 'border_2_bottom', 'border_2_left', 'border_2_outer', 'border_2_right', 'border_2_top', 'box', 'box_closed', 'box_down', 'box_front', 'box_open', 'brain', 'brain_trainer', 'breeze', 'brick', 'brick_add', 'brick_delete', 'brick_edit', 'brick_error', 'brick_go', 'brick_link', 'bricks', 'briefcase', 'brightkite', 'brushes', 'bubblechart', 'bug', 'bug_add', 'bug_delete', 'bug_edit', 'bug_error', 'bug_go', 'bug_link',
+			'building', 'building_add', 'building_delete', 'building_edit', 'building_error', 'building_go', 'building_key', 'building_link', 'bulb', 'bullet_add', 'bullet_arrow_bottom', 'bullet_arrow_down', 'bullet_arrow_left', 'bullet_arrow_left_2', 'bullet_arrow_right', 'bullet_arrow_right_2', 'bullet_arrow_top', 'bullet_arrow_up', 'bullet_black', 'bullet_blue', 'bullet_delete', 'bullet_disk', 'bullet_error', 'bullet_feed', 'bullet_go', 'bullet_green', 'bullet_key', 'bullet_orange', 'bullet_picture', 'bullet_pink', 'bullet_purple', 'bullet_red', 'bullet_star', 'bullet_toggle_minus', 'bullet_toggle_plus', 'bullet_white', 'bullet_wrench', 'bullet_yellow', 'burro', 'butterfly', 'button', 'buttonbar', 'buzz', 'cactus', 'cake', 'calculator', 'calculator_add', 'calculator_black', 'calculator_delete', 'calculator_edit', 'calculator_error', 'calculator_link', 'calendar', 'calendar_add', 'calendar_copy', 'calendar_delete', 'calendar_edit', 'calendar_link', 'calendar_view_day', 'calendar_view_month', 'calendar_view_week', 'camera', 'camera_add', 'camera_delete', 'camera_edit', 'camera_error', 'camera_go', 'camera_link', 'camera_small', 'cancel', 'candle', 'candle_2', 'candlestickchart', 'candy_cane', 'canvas', 'canvas_size', 'cap', 'car', 'car_add', 'car_delete', 'card_amazon', 'card_amex_gold', 'card_amex_gray', 'card_amex_green', 'card_apple', 'card_back', 'card_bank', 'card_chase', 'card_chip_gold', 'card_chip_silver', 'card_credit', 'card_debit', 'card_discover_black', 'card_discover_novus', 'card_echeck', 'card_export', 'card_front', 'card_gift', 'card_gift_2', 'card_gold', 'card_import', 'card_ipod', 'card_miles', 'card_money', 'card_sapphire', 'card_save', 'card_solo', 'cards', 'cards_binds', 'cargo', 'cart', 'cart_add', 'cart_delete', 'cart_edit', 'cart_error', 'cart_go', 'cart_put', 'cart_remove', 'cash_register', 'cash_register_2', 'cash_stack', 'cash_terminal', 'cat', 'cats_display', 'caution_biohazard', 'caution_high_voltage', 'caution_radiation', 'cctv_camera', 'cd', 'cd_add', 'cd_burn', 'cd_case', 'cd_case_empty', 'cd_delete', 'cd_edit', 'cd_eject', 'cd_go', 'celsius', 'centos', 'centroid', 'ceo', 'chair', 'chameleon', 'change_password', 'chart_bar', 'chart_bar_add', 'chart_bar_delete', 'chart_bar_edit', 'chart_bar_error', 'chart_bar_link', 'chart_bullseye', 'chart_column', 'chart_column_2', 'chart_curve', 'chart_curve_add', 'chart_curve_delete', 'chart_curve_edit', 'chart_curve_error', 'chart_curve_go', 'chart_curve_link', 'chart_down_color', 'chart_line', 'chart_line_add', 'chart_line_delete', 'chart_line_edit', 'chart_line_error', 'chart_line_link', 'chart_organisation', 'chart_organisation_add', 'chart_organisation_delete', 'chart_pie', 'chart_pie_add', 'chart_pie_alternative', 'chart_pie_delete', 'chart_pie_edit', 'chart_pie_error', 'chart_pie_link', 'chart_stock', 'chart_up_color',
+			'chartplotter', 'check_box', 'checkerboard', 'chefs_hat', 'cheque', 'chess_horse', 'chess_tower', 'children_cap', 'chinese_noodles', 'christmas_tree', 'church', 'cigarette', 'cirrus', 'client_account_template', 'clip_splitter', 'clipboard_empty', 'clipboard_sign', 'clipboard_silts_out', 'clock_', 'clock_add', 'clock_delete', 'clock_edit', 'clock_error', 'clock_go', 'clock_history_frame', 'clock_link', 'clock_pause', 'clock_play', 'clock_red', 'clock_select_remain', 'clock_stop', 'co2', 'cocacola', 'code', 'cog', 'cog_add', 'cog_delete', 'cog_edit', 'cog_error', 'cog_go', 'coin_single_cooper', 'coin_single_gold', 'coin_single_silver', 'coin_stack_gold', 'coins', 'coins_add', 'coins_delete', 'coins_in_hand', 'cold', 'color_adjustment', 'color_gradient', 'color_management', 'color_picker', 'color_picker_alternative', 'color_swatch', 'color_wheel', 'column_double', 'column_four', 'column_left', 'column_one', 'column_right', 'column_single', 'column_tree', 'column_two', 'columnchart', 'combo_box', 'comment', 'comment_add', 'comment_delete', 'comment_edit', 'comments', 'comments_add', 'comments_delete', 'company_generosity', 'compass', 'compress', 'computer', 'computer_add', 'computer_delete', 'computer_edit', 'computer_error', 'computer_go', 'computer_key', 'computer_link', 'connect', 'construction', 'contact_email', 'contrast', 'contrast_decrease', 'contrast_high', 'contrast_increase', 'contrast_low', 'control_eject', 'control_eject_blue', 'control_end', 'control_end_blue', 'control_equalizer', 'control_equalizer_blue', 'control_fastforward', 'control_fastforward_blue', 'control_panel', 'control_panel_access', 'control_panel_branding', 'control_pause', 'control_pause_blue', 'control_pause_record', 'control_play', 'control_play_blue', 'control_repeat', 'control_repeat_blue', 'control_rewind', 'control_rewind_blue', 'control_start', 'control_start_blue', 'control_stop', 'control_stop_blue', 'controlbar', 'controller', 'controller_add', 'controller_delete', 'controller_error', 'conversion_of_currency', 'convert_color_to_gray', 'convert_gray_to_color', 'cookie_chocolate', 'cookies', 'cooler', 'copying_and_distribution', 'copyleft', 'creative_commons', 'credit', 'creditcards', 'cricket', 'cross', 'cross_promotion_selling', 'css', 'css_add', 'css_delete', 'css_go', 'css_valid', 'cup', 'cup_add', 'cup_delete', 'cup_edit', 'cup_error', 'cup_go', 'cup_key', 'cup_link', 'curriculum_vitae', 'cursor', 'cut', 'cut_red', 'cutlery', 'data_chooser', 'data_field', 'data_grid', 'data_sort', 'data_table', 'database', 'database_add', 'database_connect', 'database_delete', 'database_edit', 'database_error', 'database_gear', 'database_go', 'database_key', 'database_lightning', 'database_link', 'database_refresh', 'database_save', 'database_server', 'database_table',
+			'date', 'date_add', 'date_delete', 'date_edit', 'date_error', 'date_go', 'date_link', 'date_magnify', 'date_next', 'date_previous', 'ddr_memory', 'debian', 'decimal_less', 'decimal_more', 'delete', 'delicious', 'derivatives', 'desilts_float', 'designmoo', 'devianart', 'diagramm', 'dialog', 'diamond', 'dice', 'digg', 'digital_signature', 'dinersclub', 'direction', 'directory_listing', 'disconnect', 'discover', 'dish', 'disk', 'disk_multiple', 'distribution_partnerships', 'dns', 'dns_setting', 'document_back', 'document_background', 'document_break', 'document_center', 'document_check_compatibility', 'document_comment_above', 'document_comment_behind', 'document_comment_below', 'document_comments', 'document_copies', 'document_editing', 'document_empty', 'document_export', 'document_font', 'document_font_wizard', 'document_image', 'document_image_hor', 'document_image_ver', 'document_import', 'document_index', 'document_info', 'document_insert', 'document_inspect', 'document_inspector', 'document_layout', 'document_margins', 'document_mark_as_final', 'document_move', 'document_next', 'document_notes', 'document_num', 'document_page', 'document_page_last', 'document_page_next', 'document_page_previous', 'document_plus', 'document_prepare', 'document_properties', 'document_quote', 'document_redirect', 'document_rename', 'document_shapes', 'document_shred', 'document_signature', 'document_spacing', 'document_split', 'document_stand', 'document_tag', 'document_todo', 'document_valid', 'document_vertical', 'document_view_book', 'documents_email', 'dog', 'domain_template', 'door', 'door_in', 'door_open', 'door_out', 'dopplr', 'down_jacket', 'download', 'download_for_linux', 'download_for_mac', 'download_for_windows', 'draw_airbrush', 'draw_calligraphic', 'draw_clone', 'draw_convolve', 'draw_dodge_burn', 'draw_ellipse', 'draw_eraser', 'draw_ink', 'draw_island', 'draw_line', 'draw_path', 'draw_points', 'draw_polygon', 'draw_polygon_curves', 'draw_polyline', 'draw_ring', 'draw_smudge', 'draw_spiral', 'draw_star', 'draw_vertex', 'draw_wave', 'drawer', 'drawer_open', 'dribbble', 'drill', 'drink', 'drink_empty', 'drive', 'drive_add', 'drive_burn', 'drive_cd', 'drive_cd_empty', 'drive_delete', 'drive_disk', 'drive_edit', 'drive_error', 'drive_go', 'drive_key', 'drive_link', 'drive_magnify', 'drive_network', 'drive_rename', 'drive_user', 'drive_web', 'drop', 'drugs_com', 'drum', 'dvd', 'dvd_add', 'dvd_delete', 'dvd_edit', 'dvd_error', 'dvd_go', 'dvd_key', 'dvd_link', 'dynamite', 'ebay', 'echeck', 'edit_chain', 'edit_diff', 'edit_free', 'edit_path', 'education', 'ehow', 'elements', 'email', 'email_add', 'email_attach', 'email_delete', 'email_edit', 'email_error', 'email_go', 'email_link', 'email_open', 'email_open_image', 'email_to_friend',
+			'ember', 'emotion_evilgrin', 'emotion_grin', 'emotion_happy', 'emotion_smile', 'emotion_suprised', 'emotion_tongue', 'emotion_unhappy', 'emotion_waii', 'emotion_wink', 'entity', 'error', 'error_add', 'error_delete', 'error_go', 'events', 'evernote', 'exclamation', 'export_excel', 'extract_foreground_objects', 'eye', 'factory', 'fatcow', 'fax', 'fedora', 'feed', 'feed_add', 'feed_delete', 'feed_disk', 'feed_edit', 'feed_error', 'feed_go', 'feed_key', 'feed_magnify', 'female', 'file_extension_3gp', 'file_extension_7z', 'file_extension_ace', 'file_extension_ai', 'file_extension_aif', 'file_extension_aiff', 'file_extension_amr', 'file_extension_asf', 'file_extension_asx', 'file_extension_bat', 'file_extension_bin', 'file_extension_bmp', 'file_extension_bup', 'file_extension_cab', 'file_extension_cbr', 'file_extension_cda', 'file_extension_cdl', 'file_extension_cdr', 'file_extension_chm', 'file_extension_dat', 'file_extension_divx', 'file_extension_dll', 'file_extension_dmg', 'file_extension_doc', 'file_extension_dss', 'file_extension_dvf', 'file_extension_dwg', 'file_extension_eml', 'file_extension_eps', 'file_extension_exe', 'file_extension_fla', 'file_extension_flv', 'file_extension_gif', 'file_extension_gz', 'file_extension_hqx', 'file_extension_htm', 'file_extension_html', 'file_extension_ifo', 'file_extension_indd', 'file_extension_iso', 'file_extension_jar', 'file_extension_jpeg', 'file_extension_jpg', 'file_extension_lnk', 'file_extension_log', 'file_extension_m4a', 'file_extension_m4b', 'file_extension_m4p', 'file_extension_m4v', 'file_extension_mcd', 'file_extension_mdb', 'file_extension_mid', 'file_extension_mov', 'file_extension_mp2', 'file_extension_mp4', 'file_extension_mpeg', 'file_extension_mpg', 'file_extension_msi', 'file_extension_mswmm', 'file_extension_ogg', 'file_extension_pdf', 'file_extension_png', 'file_extension_pps', 'file_extension_ps', 'file_extension_psd', 'file_extension_pst', 'file_extension_ptb', 'file_extension_pub', 'file_extension_qbb', 'file_extension_qbw', 'file_extension_qxd', 'file_extension_ram', 'file_extension_rar', 'file_extension_rm', 'file_extension_rmvb', 'file_extension_rtf', 'file_extension_sea', 'file_extension_ses', 'file_extension_sit', 'file_extension_sitx', 'file_extension_ss', 'file_extension_swf', 'file_extension_tgz', 'file_extension_thm', 'file_extension_tif', 'file_extension_tmp', 'file_extension_torrent', 'file_extension_ttf', 'file_extension_txt', 'file_extension_vcd', 'file_extension_vob', 'file_extension_wav', 'file_extension_wma', 'file_extension_wmv',
+			'file_extension_wps', 'file_extension_xls', 'file_extension_xpi', 'file_extension_zip', 'file_manager', 'film', 'film_add', 'film_delete', 'film_edit', 'film_error', 'film_go', 'film_key', 'film_link', 'film_save', 'filter', 'filter_add', 'filter_delete', 'finance', 'find', 'fire', 'fire_damage', 'fire_extinguisher', 'firefox', 'firewall', 'firewall_burn', 'fishfinder', 'flag_1', 'flag_2', 'flag_3', 'flag_afghanistan', 'flag_airfield_vehicle_safety', 'flag_albania', 'flag_algeria', 'flag_american_samoa', 'flag_andorra', 'flag_angola', 'flag_anguilla', 'flag_antigua_and_barbuda', 'flag_argentina', 'flag_armenia', 'flag_aruba', 'flag_australia', 'flag_austria', 'flag_azerbaijan', 'flag_bahamas', 'flag_bahrain', 'flag_bangladesh', 'flag_barbados', 'flag_belarus', 'flag_belgium', 'flag_belize', 'flag_benin', 'flag_bermuda', 'flag_bhutan', 'flag_blue', 'flag_bolivia', 'flag_bosnia', 'flag_botswana', 'flag_boy_scout', 'flag_brazil', 'flag_british_indian_ocean', 'flag_british_virgin_islands', 'flag_brunei', 'flag_bulgaria', 'flag_burkina_faso', 'flag_burma', 'flag_burundi', 'flag_cambodia', 'flag_cameroon', 'flag_canada', 'flag_cayman_islands', 'flag_central_african_republic', 'flag_chad', 'flag_chile', 'flag_china', 'flag_colombia', 'flag_comoros', 'flag_congo_democratic_republic', 'flag_congo_republic', 'flag_cook_islands', 'flag_cope_verde', 'flag_costa_rica', 'flag_cote_divoire', 'flag_croatia', 'flag_cuba', 'flag_cyprus', 'flag_czech_republic', 'flag_denmark', 'flag_djibouti', 'flag_dominica', 'flag_dominican_republic', 'flag_east_timor', 'flag_egypt', 'flag_el_salvador', 'flag_england', 'flag_equador', 'flag_equatorial_guinea', 'flag_eritrea', 'flag_estonia', 'flag_ethiopia', 'flag_european_union', 'flag_falkland_islands', 'flag_faroe_islands', 'flag_fiji', 'flag_finish', 'flag_finland', 'flag_france', 'flag_french_polynesia', 'flag_gabon', 'flag_gambia', 'flag_georgia', 'flag_germany', 'flag_ghana', 'flag_gibraltar', 'flag_great_britain', 'flag_greece', 'flag_green', 'flag_greenland', 'flag_grenada', 'flag_guam', 'flag_guatemala', 'flag_guernsey', 'flag_guinea', 'flag_guinea_bissau', 'flag_guyana', 'flag_haiti', 'flag_honduras', 'flag_hong_kong', 'flag_hot', 'flag_hungary', 'flag_iceland', 'flag_india', 'flag_indonesia', 'flag_iran', 'flag_iraq', 'flag_ireland', 'flag_isle_of_man', 'flag_israel', 'flag_italy', 'flag_jamaica', 'flag_japan', 'flag_jersey', 'flag_jordan', 'flag_kazakhstan', 'flag_kenya', 'flag_kiribati', 'flag_kuwait', 'flag_kyrgyzstan', 'flag_laos', 'flag_latvia', 'flag_lebanon', 'flag_lesotho', 'flag_liberia', 'flag_libya', 'flag_liechtenstein', 'flag_lithuania', 'flag_luxembourg', 'flag_macau', 'flag_macedonia', 'flag_madagascar', 'flag_malawi', 'flag_malaysia',
+			'flag_maledives', 'flag_mali', 'flag_malta', 'flag_marshall_islands', 'flag_martinique', 'flag_mauretania', 'flag_mauritius', 'flag_mexico', 'flag_micronesia', 'flag_moldova', 'flag_monaco', 'flag_mongolia', 'flag_montserrat', 'flag_morocco', 'flag_mozambique', 'flag_namibia', 'flag_nato', 'flag_nauru', 'flag_nepal', 'flag_netherlands', 'flag_netherlands_antilles', 'flag_new', 'flag_new_zealand', 'flag_nicaragua', 'flag_niger', 'flag_nigeria', 'flag_niue', 'flag_norfolk_islands', 'flag_north_korea', 'flag_northern_mariana_islands', 'flag_norway', 'flag_olympic', 'flag_oman', 'flag_orange', 'flag_pakistan', 'flag_palau', 'flag_panama', 'flag_papua_new_guinea', 'flag_paraquay', 'flag_peru', 'flag_philippines', 'flag_pink', 'flag_pitcairn_islands', 'flag_poland', 'flag_portugal', 'flag_puerto_rico', 'flag_purple', 'flag_qatar', 'flag_red', 'flag_red_cross', 'flag_romania', 'flag_russia', 'flag_rwanda', 'flag_saint_helena', 'flag_saint_kitts_and_nevis', 'flag_saint_lucia', 'flag_saint_pierre_and_miquelon', 'flag_saint_vincent_and_grenadines', 'flag_samoa', 'flag_san_marino', 'flag_sao_tome_and_principe', 'flag_saudi_arabia', 'flag_scotland', 'flag_senegal', 'flag_serbia_montenegro', 'flag_seychelles', 'flag_sierra_leone', 'flag_singapore', 'flag_slovakia', 'flag_slovenia', 'flag_solomon_islands', 'flag_somalia', 'flag_south_africa', 'flag_south_georgia', 'flag_south_korea', 'flag_spain', 'flag_sri_lanka', 'flag_sudan', 'flag_suriname', 'flag_swaziland', 'flag_sweden', 'flag_switzerland', 'flag_syria', 'flag_taiwan', 'flag_tajikistan', 'flag_tanzania', 'flag_thailand', 'flag_tibet', 'flag_togo', 'flag_tonga', 'flag_trinidad_and_tobago', 'flag_tunisia', 'flag_turkey', 'flag_turkmenistan', 'flag_turks_and_caicos_islands', 'flag_tuvalu', 'flag_uganda', 'flag_ukraine', 'flag_unesco', 'flag_united_arab_emirates', 'flag_united_nations', 'flag_uruquay', 'flag_usa', 'flag_uzbekistan', 'flag_vanuatu', 'flag_vatican_city', 'flag_venezuela', 'flag_vietnam', 'flag_virgin_islands', 'flag_wales', 'flag_wallis_and_futuna', 'flag_wto', 'flag_wwf', 'flag_yellow', 'flag_yemen', 'flag_zambia', 'flag_zimbabwe', 'flamingo', 'flashdisk', 'flashlight', 'flashlight_shine', 'flask', 'flask_empty', 'flex', 'flex_builder', 'flickr', 'flood_it', 'flower', 'fog', 'folder', 'folder_add', 'folder_bell', 'folder_brick', 'folder_bug', 'folder_camera', 'folder_database', 'folder_delete', 'folder_edit', 'folder_error', 'folder_explore', 'folder_feed', 'folder_find', 'folder_go', 'folder_heart', 'folder_image', 'folder_key', 'folder_lightbulb', 'folder_link', 'folder_page', 'folder_page_white', 'folder_palette', 'folder_picture', 'folder_star',
+			'folder_table', 'folder_user', 'folder_wrench', 'folders', 'folders_explorer', 'font', 'font_add', 'font_colors', 'font_delete', 'font_go', 'font_red', 'font_red_delete', 'font_subscript', 'font_superscript', 'form', 'formheading', 'forrst', 'freebsd', 'friendfeed', 'ftp', 'gamespot', 'gas', 'gcp', 'gcp_rms', 'gear_in', 'gentoo_linux', 'georectify', 'gift_add', 'global_telecom', 'globe_model', 'google', 'google_adsense', 'google_custom_search', 'google_map', 'google_new', 'google_talk', 'google_voice', 'google_wave', 'google_web_elements', 'google_webmaster_tools', 'gowalla', 'gps_automotive', 'gps_handheld', 'grass', 'green', 'grid', 'grooveshark', 'group', 'group_add', 'group_delete', 'group_edit', 'group_error', 'group_gear', 'group_go', 'group_key', 'group_link', 'hammer', 'hand', 'hand_point', 'hand_point_090', 'hand_point_180', 'hand_point_270', 'hand_property', 'handbag', 'hardware_building_oem', 'hat', 'hbox', 'hd_1080', 'hd_720', 'hd_ready', 'hdividedbox', 'headphone', 'headphone_mic', 'health', 'heart', 'heart_add', 'heart_delete', 'helmet', 'help', 'hlocchart', 'holly', 'home_page', 'horizontal_list', 'horn', 'horoscopes', 'hostname', 'hot', 'hotjobs', 'hourglass', 'hourglass_add', 'hourglass_delete', 'hourglass_go', 'hourglass_link', 'house', 'house_go', 'house_link', 'house_one', 'house_two', 'hrule', 'hslider', 'html', 'html_add', 'html_delete', 'html_go', 'html_valid', 'hummingbird', 'icecream', 'ilike', 'im_messenger', 'image', 'image_add', 'image_delete', 'image_edit', 'image_link', 'images', 'index-cards', 'info_rhombus', 'information', 'injection', 'insert_element', 'insert_object', 'installer_box', 'interface_preferences', 'internet_explorer', 'investment_menu_quality', 'ip', 'ip_block', 'ip_class', 'ipad', 'iphone', 'ipod', 'ipod_cast', 'ipod_cast_add', 'ipod_cast_delete', 'ipod_sound', 'italy', 'jacket', 'jar_empty', 'jar_open', 'jeans', 'joystick', 'joystick_add', 'joystick_delete', 'joystick_error', 'key', 'key_a', 'key_add', 'key_b', 'key_c', 'key_d', 'key_delete', 'key_e', 'key_escape', 'key_f', 'key_g', 'key_go', 'key_i', 'key_j', 'key_k', 'key_l', 'key_m', 'key_n', 'key_o', 'key_p', 'key_q', 'key_s', 'key_t', 'key_u', 'key_v', 'key_w', 'key_x', 'key_y', 'key_z', 'keyboard', 'keyboard_add', 'keyboard_delete', 'keyboard_magnify', 'kids', 'ladybird', 'landmarks', 'languange', 'laptop', 'large_tiles', 'last_fm', 'layer', 'layer_add', 'layer_aspect_arrow', 'layer_cell_cats', 'layer_chart', 'layer_command', 'layer_create', 'layer_database', 'layer_delete', 'layer_edit', 'layer_export', 'layer_gps', 'layer_grid', 'layer_group', 'layer_his', 'layer_histogram', 'layer_import', 'layer_label', 'layer_open', 'layer_raster', 'layer_raster_3d', 'layer_redraw', 'layer_remove', 'layer_rgb', 'layer_save', 'layer_shaded_relief',
+			'layer_to_image_size', 'layer_vector', 'layer_wms', 'layers', 'layers_map', 'layout', 'layout_add', 'layout_content', 'layout_delete', 'layout_edit', 'layout_error', 'layout_header', 'layout_link', 'layout_sidebar', 'led', 'legend', 'license_management', 'life_vest', 'light_circle_green', 'lightbulb', 'lightbulb_add', 'lightbulb_delete', 'lightbulb_off', 'lighthouse', 'lightning', 'lightning_add', 'lightning_delete', 'lightning_go', 'line_split', 'linechart', 'link', 'link_add', 'link_break', 'link_button', 'link_delete', 'link_edit', 'link_go', 'linkbar', 'linkedin', 'linux_mint', 'list', 'livejournal', 'locate', 'location_pin', 'lock', 'lock_add', 'lock_break', 'lock_delete', 'lock_edit', 'lock_go', 'lock_open', 'lollipop', 'lollypop', 'lorry', 'lorry_add', 'lorry_delete', 'lorry_error', 'lorry_flatbed', 'lorry_go', 'lorry_link', 'luggage', 'magic_wand_2', 'magnet', 'magnifier', 'magnifier_zoom_in', 'magnifier_zoom_out', 'mail_box', 'mail_server_setting', 'mail-trash', 'male', 'mandriva', 'map', 'map_add', 'map_delete', 'map_edit', 'map_go', 'map_magnify', 'marketwatch', 'master_card', 'measure', 'measure_crop', 'medal_bronze_1', 'medal_bronze_2', 'medal_bronze_3', 'medal_bronze_add', 'medal_bronze_delete', 'medal_gold_1', 'medal_gold_2', 'medal_gold_3', 'medal_gold_add', 'medal_gold_delete', 'medal_silver_1', 'medal_silver_2', 'medal_silver_3', 'medal_silver_add', 'medal_silver_delete', 'menu', 'menu_item', 'menubar', 'messenger', 'metro', 'metronome', 'micro_sd', 'micro_sd_blue', 'microphone', 'milestone', 'mixer', 'mixx', 'mobile_me', 'money', 'money_add', 'money_bag', 'money_bookers', 'money_delete', 'money_dollar', 'money_euro', 'money_in_envelope', 'money_pound', 'money_yen', 'moneybox', 'monitor', 'monitor_add', 'monitor_delete', 'monitor_edit', 'monitor_error', 'monitor_go', 'monitor_lightning', 'monitor_link', 'monitor_screensaver', 'monitor_sidebar', 'monitor_wallpaper', 'monitor_window', 'monitor_window_3d', 'motherboard', 'mouse', 'mouse_2', 'mouse_add', 'mouse_delete', 'mouse_error', 'mouse_select_left', 'mouse_select_right', 'mouse_select_scroll', 'move_to_folder', 'movies', 'ms_exchange', 'ms_frontpage', 'msn_messenger', 'multitool', 'music', 'my_name_is_e', 'myspace', 'nameboard_open', 'netvibes', 'network_adapter', 'network_folder', 'networking', 'networking_green', 'networking_red', 'network-share', 'new', 'newspaper', 'newspaper_add', 'newspaper_delete', 'newspaper_go', 'newspaper_link', 'newsvine', 'no_commercial', 'no_drm_trm', 'no_image', 'no_requirements', 'node-tree', 'nokia_s60', 'non_derivative', 'note', 'note_add', 'note_delete', 'note_edit', 'note_error', 'note_go', 'numeric_stepper', 'oil', 'open_folder', 'open_suse', 'openid', 'opera',
+			'orbit', 'origami', 'orkut', 'ornament_gold', 'other_phone', 'package', 'package_add', 'package_delete', 'package_go', 'package_green', 'package_link', 'page', 'page_add', 'page_attach', 'page_code', 'page_copy', 'page_delete', 'page_edit', 'page_error', 'page_excel', 'page_find', 'page_gear', 'page_go', 'page_green', 'page_key', 'page_lightning', 'page_link', 'page_magnifier', 'page_paintbrush', 'page_paste', 'page_red', 'page_refresh', 'page_save', 'page_white', 'page_white_acrobat', 'page_white_actionscript', 'page_white_add', 'page_white_c', 'page_white_camera', 'page_white_cd', 'page_white_code', 'page_white_code_red', 'page_white_compress', 'page_white_copy', 'page_white_cplusplus', 'page_white_csharp', 'page_white_cup', 'page_white_database', 'page_white_delete', 'page_white_dvd', 'page_white_edit', 'page_white_error', 'page_white_excel', 'page_white_find', 'page_white_flash', 'page_white_gear', 'page_white_get', 'page_white_go', 'page_white_h', 'page_white_horizontal', 'page_white_key', 'page_white_lightning', 'page_white_link', 'page_white_magnify', 'page_white_medal', 'page_white_office', 'page_white_paint', 'page_white_paintbrush', 'page_white_paste', 'page_white_php', 'page_white_picture', 'page_white_powerpoint', 'page_white_put', 'page_white_ruby', 'page_white_stack', 'page_white_star', 'page_white_text', 'page_white_text_width', 'page_white_tux', 'page_white_vector', 'page_white_visualstudio', 'page_white_width', 'page_white_word', 'page_white_world', 'page_white_wrench', 'page_white_zip', 'page_word', 'page_world', 'painbrush', 'paintcan', 'palette', 'pandora', 'panel', 'paper_airplane', 'parrot', 'participation_rate', 'paste_plain', 'paste_word', 'paypal', 'paypal-2', 'pc_linux_os', 'pci', 'peacock', 'peak_cap', 'pencil', 'pencil_add', 'pencil_delete', 'pencil_go', 'perfomance', 'personal_finance', 'personals', 'phone', 'phone_add', 'phone_Android', 'phone_delete', 'phone_sound', 'photo', 'photo_add', 'photo_delete', 'photo_link', 'photos', 'pi_math', 'picasa', 'picture', 'picture_add', 'picture_delete', 'picture_edit', 'picture_empty', 'picture_error', 'picture_frame', 'picture_go', 'picture_key', 'picture_link', 'picture_save', 'pictures', 'piechart', 'pilcrow', 'pill', 'pill_add', 'pill_delete', 'pill_go', 'pint', 'pirate_flag', 'places', 'Plant', 'playstation', 'plotchart', 'plugin', 'plugin_add', 'plugin_delete', 'plugin_disabled', 'plugin_edit', 'plugin_error', 'plugin_go', 'plugin_link', 'plurk', 'poker', 'poo', 'pop_mail', 'popcorn', 'port', 'postage_stamp', 'posterous', 'power_surge', 'preferences', 'premium_support', 'price_alert', 'price_comparison', 'price_watch', 'print_size', 'printer', 'printer_add',
+			'printer_delete', 'printer_empty', 'printer_error', 'private', 'processor', 'production_copyleft', 'profiles', 'progressbar', 'purse', 'qik', 'qip_angry', 'qip_at_home', 'qip_at_work', 'qip_away', 'qip_bad_mood', 'qip_dnd', 'qip_eating', 'qip_free_for_chat', 'qip_invisible', 'qip_invisible_for_all', 'qip_not_available', 'qip_occupied', 'qip_offline', 'qip_online', 'question', 'radio_1', 'radio_2', 'radioactivity', 'radiobutton', 'radiobutton_group', 'radiolocator', 'rain', 'rainbow', 'rainbow_cloud', 'readernaut', 'real_estate', 'recycle', 'recycle_bag', 'red_line', 'reddit', 'remote', 'report', 'report_add', 'report_delete', 'report_disk', 'report_edit', 'report_go', 'report_key', 'report_link', 'report_magnify', 'report_picture', 'report_user', 'report_word', 'reseller_account', 'reseller_account_template', 'reseller_programm', 'resize_picture', 'resource_usage', 'resources', 'restaurant_menu', 'resultset_first', 'resultset_last', 'resultset_next', 'resultset_previous', 'ribbon', 'richtext_editor', 'ring', 'road_sign', 'roadworks', 'robo_to', 'role', 'rosette', 'rotate_90', 'router', 'routing_around', 'routing_forward', 'routing_go_left', 'routing_go_right', 'routing_go_straight_left', 'routing_go_straight_right', 'routing_intersection_right', 'routing_turn_arround_left', 'routing_turn_arround_right', 'routing_turn_left', 'routing_turn_left_2', 'routing_turn_left_crossroads', 'routing_turn_right', 'routing_turn_right_2', 'routing_turn_u', 'routing_turnaround_left', 'routing_turnaround_right', 'routing_turning_left', 'routing_turning_right', 'rss', 'rss_add', 'rss_delete', 'rss_go', 'rss_valid', 'ruby', 'ruby_add', 'ruby_delete', 'ruby_gear', 'ruby_get', 'ruby_go', 'ruby_key', 'ruby_link', 'ruby_put', 'safari_browser', 'safe', 'sallary_deferrais', 'salver', 'santa', 'satellite', 'satellite_dish', 'save_as', 'save_money', 'scale_image', 'scanner', 'screen_error', 'screwdriver', 'script', 'script_add', 'script_code', 'script_code_red', 'script_delete', 'script_edit', 'script_error', 'script_gear', 'script_go', 'script_key', 'script_lightning', 'script_link', 'script_palette', 'script_save', 'scripts', 'scroller_bar', 'scull', 'search_minus', 'search_plus', 'select', 'select_by_adding_to_selection', 'select_by_color', 'select_by_difference', 'select_by_intersection', 'select_continuous_area', 'select_ellipse', 'select_invert', 'select_lasso', 'select_restangular', 'sertificate', 'server', 'server_add', 'server_chart', 'server_components', 'server_compress', 'server_connect', 'server_database', 'server_delete', 'server_edit', 'server_error', 'server_go', 'server_information', 'server_key', 'server_lightning', 'server_link', 'server_stanchion', 'server_uncompress',
+			'session_idle_time', 'set_security_question', 'setting_tools', 'shading', 'shape_flip_horizontal', 'shape_flip_vertical', 'shape_group', 'shape_handles', 'shape_move_back', 'shape_move_backwards', 'shape_move_forwards', 'shape_move_front', 'shape_rotate_anticlockwise', 'shape_rotate_clockwise', 'shape_square', 'shape_square_add', 'shape_square_delete', 'shape_square_edit', 'shape_square_error', 'shape_square_go', 'shape_square_key', 'shape_square_link', 'shape_ungroup', 'share', 'sharpen', 'sheduled_task', 'shield', 'shield_add', 'shield_delete', 'shield_go', 'shirt_polo', 'shopping', 'shorts', 'showel', 'shuriken', 'sign', 'siren', 'site_backup_and_restore', 'site_enhancer', 'sitemap', 'sitemap_color', 'size_horizontal', 'size_vertical', 'skate', 'skins', 'skype', 'slackware', 'slideshow', 'small_business', 'small_car', 'small_tiles', 'snapshot', 'snow_rain', 'snowman', 'soap', 'soil_layers', 'solar', 'sort_ascending', 'sort_columns', 'sort_descending', 'sound', 'sound_add', 'sound_delete', 'sound_low', 'sound_mute', 'sound_none', 'soup', 'source_code', 'spacer', 'spam', 'spam_filter', 'speakers', 'speedometer', 'spellcheck', 'spellcheck_error', 'spider_web', 'spill', 'sport', 'sport_8ball', 'sport_basketball', 'sport_football', 'sport_golf', 'sport_raquet', 'sport_shuttlecock', 'sport_soccer', 'sport_tennis', 'spring', 'sql_join', 'sql_join_inner', 'sql_join_left', 'sql_join_left_exclude', 'sql_join_outer', 'sql_join_outer_exclude', 'sql_join_right', 'sql_join_right_exclude', 'ssl_certificates', 'stamp_pattern', 'star', 'statistics', 'status_away', 'status_busy', 'status_offline', 'status_online', 'steering_wheel', 'steering_wheel_2', 'steering_wheel_3', 'stop', 'stopwatch_finish', 'stopwatch_pause', 'stopwatch_start', 'storage', 'street_stall', 'stumble_upon', 'style', 'style_add', 'style_delete', 'style_edit', 'style_go', 'subwoofer', 'sum', 'sun_cloudy', 'sun_rain', 'support', 'swf_loader', 'switch', 'switch_120v', 'switch_220v', 'system_monitor', 'system_time', 'tab', 'tab_add', 'tab_delete', 'tab_edit', 'tab_go', 'tabbar', 'table', 'table_add', 'table_chart', 'table_delete', 'table_edit', 'table_error', 'table_excel', 'table_export', 'table_gear', 'table_go', 'table_heatmap', 'table_import', 'table_insert', 'table_key', 'table_lightning', 'table_link', 'table_money', 'table_multiple', 'table_paint_can', 'table_refresh', 'table_relationship', 'table_replace', 'table_row_delete', 'table_row_insert', 'table_save', 'table_select', 'table_select_all', 'table_select_big', 'table_select_column', 'table_select_row', 'table_sheet', 'table_sort', 'table_split', 'table_sum',
+			'table_tab', 'table_tab_resize', 'table_tab_search', 'tabnavigator', 'tag', 'tag_blue', 'tag_blue_add', 'tag_blue_delete', 'tag_blue_edit', 'tag_green', 'tag_orange', 'tag_pink', 'tag_purple', 'tag_red', 'tag_yellow', 'tags_cloud', 'tea_cup', 'teapot', 'technorati', 'teddy_bear', 'telephone', 'telephone_add', 'telephone_delete', 'telephone_edit', 'telephone_error', 'telephone_go', 'telephone_key', 'telephone_link', 'television', 'television_add', 'television_delete', 'temperature_1', 'temperature_2', 'temperature_3', 'temperature_4', 'temperature_5', 'terminal', 'text', 'text_alilts_center', 'text_alilts_justity', 'text_alilts_left', 'text_alilts_right', 'text_allcaps', 'text_area', 'text_bold', 'text_columns', 'text_document', 'text_document_wrap', 'text_drama', 'text_dropcaps', 'text_heading_1', 'text_heading_2', 'text_heading_3', 'text_heading_4', 'text_heading_5', 'text_heading_6', 'text_horizontalrule', 'text_indent', 'text_indent_remove', 'text_italic', 'text_kerning', 'text_large_cap', 'text_letter_omega', 'text_letterspacing', 'text_linespacing', 'text_list_bullets', 'text_list_numbers', 'text_lowercase', 'text_padding_bottom', 'text_padding_left', 'text_padding_right', 'text_padding_top', 'text_pagination', 'text_pagination_100', 'text_prose', 'text_replace', 'text_resize', 'text_signature', 'text_smallcaps', 'text_strikethroungh', 'text_subscript', 'text_superscript', 'text_underline', 'text_uppercase', 'text_width', 'textfield', 'textfield_add', 'textfield_delete', 'textfield_key', 'textfield_rename', 'theater', 'things_beauty', 'things_digital', 'three_tags', 'thumb_down', 'thumb_up', 'tick', 'tilelist', 'time', 'time_add', 'time_delete', 'time_go', 'timeline', 'timeline_marker', 'tire', 'title_window', 'to_do_list', 'to_do_list_cheked_1', 'to_do_list_cheked_all', 'toolbox', 'tooth', 'tornado', 'toster', 'total_plan_cost', 'toucan', 'tower', 'toxic', 'traffic_lights', 'traffic_lights_green', 'traffic_lights_red', 'traffic_lights_yellow', 'traffic_usage', 'transform_crop', 'transform_crop_resize', 'transform_flip', 'transform_layer', 'transform_move', 'transform_path', 'transform_perspective', 'transform_rotate', 'transform_rotate_180', 'transform_rotate_270', 'transform_rotate_90', 'transform_scale', 'transform_selection', 'transform_shear', 'transmit', 'transmit_add', 'transmit_blue', 'transmit_delete', 'transmit_edit', 'transmit_error', 'transmit_go', 'travel', 'tree', 'trojan_horse', 'tumblr', 'tux', 'twitter_1', 'twitter_2', 'ubuntu', 'umbrella', 'underle_dictionary', 'understanding', 'unicorn', 'universal_binary', 'update', 'usb_3', 'user', 'user_add', 'user_astronaut',
+		   	'user_batman', 'user_blondy', 'user_catwomen', 'user_chief', 'user_chief_female', 'user_clown', 'user_comment', 'user_delete', 'user_edit', 'user_female', 'user_go', 'user_gray', 'user_green', 'user_jew', 'user_king', 'user_maid', 'user_medical', 'user_medical_female', 'user_ninja', 'user_nude', 'user_nude_female', 'user_orange', 'user_police_england', 'user_police_female', 'user_policeman', 'user_queen', 'user_red', 'user_sailor', 'user_silhouette', 'user_soldier', 'user_student', 'user_student_female', 'user_suit', 'user_vietnamese', 'user_zorro', 'vbox', 'vcard', 'vcard_add', 'vcard_delete', 'vcard_edit', 'vdividedbox', 'vector', 'vector_add', 'vector_delete', 'vhs', 'viddler', 'video', 'video_mode', 'videodisplay', 'viewstack', 'vimeo', 'virb', 'virus_protection', 'visa', 'visa_2', 'visa_electron', 'vlc', 'vrule', 'vslider', 'walk', 'wallet', 'wand', 'weather_clouds', 'weather_cloudy', 'weather_lightning', 'weather_rain', 'weather_snow', 'weather_sun', 'web_concierge', 'webcam', 'webcam_add', 'webcam_delete', 'webcam_error', 'weight', 'whistle', 'widescreen', 'widgets', 'windy', 'wine_pairings', 'winrar_add', 'winrar_extract', 'winrar_view', 'wishlist_add', 'wizard', 'wizard_women', 'wordpress', 'wordpress_blog', 'workspace', 'world', 'world_add', 'world_delete', 'world_edit', 'world_go', 'world_link', 'wrapping_behind', 'wrapping_between', 'wrapping_edit', 'wrapping_in_front', 'wrapping_inline', 'wrapping_magazine', 'wrapping_square', 'wrapping_tight', 'wrench', 'wrench_orange', 'www_page', 'xhtml', 'xhtml_add', 'xhtml_delete', 'xhtml_go', 'xhtml_valid', 'xing', 'yahoo_messenger', 'yellow_submarine', 'yelp', 'youtube', 'zoom', 'zoom_extend', 'zoom_in', 'zoom_last', 'zoom_layer', 'zoom_out', 'zoom_refresh', 'zoom_selection', 'zootool');
+
+
+		$icons_primo = array('access_black', 'access_blue', 'address_black', 'address_blue', 'address_book', 'archive', 'attachment', 'barcode', 'battery_empty', 'battery_full', 'battery_half', 'blackboard', 'block_black', 'block_blue', 'blog', 'blog_accept', 'blog_add', 'blog_compose', 'blog_delete', 'blog_private', 'bluetooth_black', 'bluetooth_blue', 'bookmark', 'box', 'box_open', 'briefcase', 'button_black_eject', 'button_black_ffw', 'button_black_first', 'button_black_last', 'button_black_pause', 'button_black_play', 'button_black_rec', 'button_black_repeat', 'button_black_rew', 'button_black_stop',
+			'button_blue_eject', 'button_blue_ffw', 'button_blue_first', 'button_blue_last', 'button_blue_pause', 'button_blue_play', 'button_blue_rec', 'button_blue_repeat', 'button_blue_rew', 'button_blue_stop', 'button_grey_eject', 'button_grey_ffw', 'button_grey_first', 'button_grey_last', 'button_grey_pause', 'button_grey_play', 'button_grey_rec', 'button_grey_repeat', 'button_grey_rew', 'button_grey_stop', 'calculator', 'calendar', 'camera', 'cd', 'certificate', 'chart_bar', 'chart_pie', 'chip', 'clock', 'coffee', 'comment_accept',
+		   	'comment_add', 'comment_delete', 'comment_edit', 'comment_private', 'comments', 'compass', 'copy', 'credit_card_amex', 'credit_card_mastercard', 'credit_card_visa', 'credit_cards', 'currency_black_dollar', 'currency_black_euro', 'currency_black_pound', 'currency_black_yuan', 'currency_blue_dollar', 'currency_blue_euro',
+			'currency_blue_pound', 'currency_blue_yuan', 'database_active', 'database_inactive', 'delivery', 'design', 'email', 'email_accept', 'email_add', 'email_compose', 'email_delete', 'email_forward', 'email_open', 'email_reply', 'email_send', 'exchange', 'file_download', 'file_upload', 'filter', 'folder', 'folder_add', 'folder_block', 'folder_delete', 'folder_download', 'folder_email', 'folder_open', 'folder_private', 'folder_search', 'folder_sent', 'folder_upload', 'folder_user', 'game_pad', 'gear', 'gift', 'globe', 'harddisk', 'help_black', 'help_blue', 'home', 'inbox', 'info_black', 'info_blue', 'ipod', 'key', 'keyboard', 'label', 'label_black_buy', 'label_black_hot', 'label_black_new', 'label_blue_buy', 'label_blue_hot', 'label_blue_new', 'laptop', 'link', 'lock', 'micphone', 'mobile', 'monitor', 'mouse', 'music', 'news', 'notepad', 'outbox', 'paste', 'pencil', 'photo', 'power_black', 'power_blue', 'print', 'puzzle', 'receipt', 'recycle_bin', 'rss_black', 'rss_blue', 'save', 'saving', 'search', 'shopping_bag',
+		   	'shopping_basket', 'shopping_basket_2', 'shopping_cart', 'shopping_trolley', 'speaker', 'speaker_mute', 'star_full', 'star_half', 'star_none', 'sticker_black', 'sticker_black_50off', 'sticker_black_sale', 'sticker_blue', 'sticker_blue_50off', 'sticker_blue_sale', 'sub_black_accept', 'sub_black_add', 'sub_black_delete', 'sub_black_down', 'sub_black_next', 'sub_black_prev', 'sub_black_remove', 'sub_black_rotate_ccw', 'sub_black_rotate_cw', 'sub_black_up', 'sub_blue_accept', 'sub_blue_add', 'sub_blue_delete', 'sub_blue_down', 'sub_blue_next', 'sub_blue_prev', 'sub_blue_remove', 'sub_blue_rotate_ccw', 'sub_blue_rotate_cw', 'sub_blue_up', 'tag', 'telephone_black', 'telephone_blue', 'tools', 'unlock', 'user', 'user_group', 'vcards', 'video', 'wallet', 'warning_black', 'warning_blue', 'windows');
+
+ $table_code .= '
+<!-- col 1 --><div class="lizatom-table-col">
+<div class="lizatom-table-col-name">
+Basic
+</div>
+<div class="lizatom-table-col-price">
+<sup>$</sup>10<span class="sub">/MO</span>
+</div>
+<ul class="lizatom-table-col-items">
+<li class="yes">5 Websites Cap</li>
+<li class="no">Domain Name Included</li>
+<li><a class="fancybutton fancysimple fancydefault fancylarge" href="#"><span class="cart">Add To Cart Now!</span></a></li>
+</ul>
+</div><!-- col 2 -->      
+<div class="lizatom-table-col">
+<div class="lizatom-table-col-name">
+Premium
+</div>
+<div class="lizatom-table-col-price">
+<sup>$</sup>12<span class="sub">/MO</span>
+</div>
+<ul class="lizatom-table-col-items">
+<li class="yes">5 Websites Cap</li>
+<li class="yes">Domain Name Included</li>
+<li><a class="fancybutton fancysimple fancydefault fancylarge" href="#"><span class="cart">Add To Cart Now!</span></a></li>
+</ul>
+</div>
+<div class="clear"></div>';		
+		/*3d buttons*/
+
+		$shortcodes['smlts_3dbutton'] = array(
+			'name'     => __( 'LT 3d button', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom content',
+			'content' =>  __( "3D button", 'smlts' ),             
+			'desc'     => __( 'Animated 3D buttons.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-3d-button" target="_blank">', '&rarr;</a>' ),
+ 			'icon'     => 'stop',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_3dbutton' ),
+			'atts' => array(
+				'id' => array(
+					'default' => 'unique-lt3dbutton-id',
+					'name' => __( 'ID', 'smlts' ),
+					'desc' => __( 'Required! Insert unique id of the button. Example: unique-lt3dbutton-id', 'smlts')),
+				'color' => array(
+					'type' => 'select',
+					'values' => array(
+						'gray'   => __( 'gray', 'smlts' ),
+						'turquoise'   => __( 'turquoise', 'smlts' ),
+						'blue'   => __( 'blue', 'smlts' ),
+						'brown'   => __( 'brown', 'smlts' ),
+						'red'   => __( 'red', 'smlts' ),
+						'darkblue'   => __( 'darkblue', 'smlts' ),
+						'green'   => __( 'green', 'smlts' ),
+						'purple'   => __( 'purple', 'smlts' ),
+						'lightbrown'   => __( 'lightbrown', 'smlts' ),
+						'lightorange'   => __( 'lightorange', 'smlts' ),
+						'magenta'   => __( 'magenta', 'smlts' ),
+						'darkgray'   => __( 'darkgray', 'smlts' ),
+						'yellow'   => __( 'yellow', 'smlts' ),
+						'pink'   => __( 'pink', 'smlts' )
+					),
+					'default' => 'gray',
+					'name' => __( 'Color', 'smm' ),
+					'desc' => __( 'Color of the button.', 'smm' )
+				),
+				'target' => array(
+					'type' => 'select',
+					'values' => array(
+						'_self'   => __( '_self', 'smlts' ),
+						'_blank'   => __( '_blank', 'smlts' ),
+						'_top'   => __( '_top', 'smlts' ),
+						'_parent'   => __( '_parent', 'smlts' )
+					),
+					'default' => '_top',
+					'name' => __( 'target', 'smlts' ),
+					'desc' => __( 'target attribute.', 'smlts' )
+				),   
+				'url' => array(
+					'default' => 'http://mysite.com',
+					'name' => __( 'url', 'smlts' ),
+					'desc' => __( 'Button URL.', 'smlts')),
+				'icon' => array(
+					'type' => 'select',
+					'values' => array(
+						'basket'   => __( 'basket', 'smlts' ),
+						'bookmark'   => __( 'bookmark', 'smlts' ),
+						'config'   => __( 'config', 'smlts' ),
+						'down_black'   => __( 'down_black', 'smlts' ),
+						'email'   => __( 'email', 'smlts' ),
+						'free-for-job'   => __( 'free-for-job', 'smlts' ),
+						'home'   => __( 'home', 'smlts' ),
+						'lightbulb'   => __( 'lightbulb', 'smlts' ),
+						'login'   => __( 'login', 'smlts' ),
+						'logout'   => __( 'logout', 'smlts' ),
+						'print'   => __( 'print', 'smlts' ),
+						'products'   => __( 'products', 'smlts' ),
+						'special-offer'   => __( 'special-offer', 'smlts' ),
+						'statistics'   => __( 'statistics', 'smlts' ),
+						'suppliers'   => __( 'suppliers', 'smlts' ),
+					),
+					'default' => 'basket',
+					'name' => __( 'Icon', 'smlts' ),
+					'desc' => __( '3D button icon', 'smlts' )
+				),
+				'animation' => array(
+					'type' => 'select',
+					'values' => array(
+						'1'   => __( '1', 'smlts' ),
+						'2'   => __( '2', 'smlts' ),
+						'3'   => __( '3', 'smlts' ),
+						'4'   => __( '4', 'smlts' )
+					),
+					'default' => '1',
+					'name' => __( 'Animation', 'smlts' ),
+					'desc' => __( 'Animation effect.', 'smlts' )
+				),
+				'float' => array(
+					'type' => 'select',
+					'values' => array(
+						'left'   => __( 'left', 'smlts' ),
+						'right'   => __( 'right', 'smlts' )
+					),
+					'default' => 'left',
+					'name' => __( 'Floating', 'smlts' ),
+					'desc' => __( 'Float the element.', 'smlts' )
+				)
+			)
+		);
+
+		/*fancybuttons*/		
+		$shortcodes['smlts_fancybutton'] = array(
+			'name'     => __( 'LT fancybutton', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom content',
+			'content' =>  __( "Fancy button", 'smlts' ),             
+			'desc'     => __( 'Beautiful buttons.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-fancy-buttons" target="_blank">', '&rarr;</a>' ),			
+			'icon'     => 'stop',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_fancybutton' ),
+			'atts' => array(
+				'id' => array(
+					'default' => 'unique-ltfancybutton-id',
+					'name' => __( 'ID', 'smlts' ),
+					'desc' => __( 'Required! Insert unique id of the button. Example: unique-ltfancybutton-id', 'smlts')),
+				'size' => array(
+					'type' => 'select',
+					'values' => array(
+						'small'   => __( 'small', 'smlts' ),
+						'medium'   => __( 'medium', 'smlts' ),
+						'large'   => __( 'large', 'smlts' ),
+						'xl'   => __( 'xl', 'smlts' ),
+						'xxl'   => __( 'xxl', 'smlts' ),
+						'xxxl'   => __( 'xxxl', 'smlts' ),
+					),
+					'default' => 'medium',
+					'name' => __( 'Size', 'smlts' ),
+					'desc' => __( 'Size of the button.', 'smlts' )
+				),
+				'color' => array(
+					'type' => 'select',
+					'values' => array(
+						'default'   => __( 'default', 'smlts' ),
+						'black'   => __( 'black', 'smlts' ),
+						'teal'   => __( 'teal', 'smlts' ),
+						'magenta'   => __( 'magenta', 'smlts' ),
+						'red'   => __( 'red', 'smlts' ),
+						'orange'   => __( 'orange', 'smlts' ),
+						'green'   => __( 'green', 'smlts' ),
+						'purple'   => __( 'purple', 'smlts' ),
+						'blue'   => __( 'blue', 'smlts' ),
+						'yellow'   => __( 'yellow', 'smlts' ),
+					),
+					'default' => 'default',
+					'name' => __( 'Color', 'smm' ),
+					'desc' => __( 'Color of the button.', 'smm' )
+				),                        
+				'target' => array(
+					'type' => 'select',
+					'values' => array(
+						'_self'   => __( '_self', 'smlts' ),
+						'_blank'   => __( '_blank', 'smlts' ),
+						'_top'   => __( '_top', 'smlts' ),
+						'_parent'   => __( '_parent', 'smlts' )
+					),
+					'default' => '_top',
+					'name' => __( 'target', 'smlts' ),
+					'desc' => __( 'target attribute.', 'smlts' )
+				),   
+				'url' => array(
+					'default' => 'http://mysite.com',
+					'name' => __( 'url', 'smlts' ),
+					'desc' => __( 'Button URL.', 'smlts')),
+				'icon' => array(
+					'type' => 'image',
+					'default' => 'icon: heart',
+					'name' => __( 'Icon', 'smlts' ),
+					'values' => $fancy_icons,
+					'path_small' => plugins_url( 'assets/css/fancybuttons/images/icons/silk/', SMLTS_PLUGIN_FILE ),
+					'mime' => 'png',
+					'desc' => __( 'Choose an icon from the collection.', 'smlts' )
+				),
+				'display_icon' => array(
+					'type' => 'bool',
+					'default' => 'yes',
+					'name' => __( 'Display icon?', 'smlts' ), 
+					'desc' => __( 'Do you want to display icon?', 'smlts' )
+				),
+			)
+		);
+
+		/*list*/		
+		$shortcodes['smlts_list'] = array(
+			'name'     => __( 'LT list', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom content',
+			'content' =>  __( "<li>one</li>\n<li>two</li>\n<li>three</li>", 'smlts' ),             
+			'desc'     => __( 'Nice unordered list.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-unordered-lists" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'list',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_list' ),
+			'atts' => array(                        
+				'icon' => array(
+					'type' => 'image',
+					'default' => 'icon: dot',
+					'name' => __( 'Icon', 'smlts' ),
+					'values' => $list_icons,
+					'path_small' => plugins_url( 'assets/images/lists/', SMLTS_PLUGIN_FILE ),
+					'mime' => 'png',
+					'desc' => __( 'Choose an icon from the collection.', 'smlts' )
+				),
+
+			)
+		);
+
+		/*tooltip*/		
+		$shortcodes['smlts_tooltip'] = array(
+			'name'     => __( 'LT tooltip', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom tooltip',
+			'content' =>  __( "Tooltip content. You can enter text or HTML tags including images or iframes with videos, maps etc.", 'smlts' ),             
+			'desc'     => __( 'Nice tooltip in many color variations.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-tooltips" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'text-height',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_tooltip' ),
+			'atts' => array(                        
+				'position' => array(
+					'type' => 'select',
+					'values' => array(
+						'top'   => __( 'top', 'smlts' ),
+						'bottom'   => __( 'bottom', 'smlts' ),
+						'left'   => __( 'left', 'smlts' ),
+						'right'   => __( 'right', 'smlts' )
+					),
+					'default' => 'top',
+					'name' => __( 'Position', 'smlts' ),
+					'desc' => __( 'Position of the tooltip.', 'smlts' )
+				),
+				'color' => array(
+					'type' => 'select',
+					'values' => array(
+						'blue'   => __( 'blue', 'smlts' ),
+						'light-blue'   => __( 'light-blue', 'smlts' ),
+						'sky-blue'   => __( 'sky-blue', 'smlts' ),
+						'green'   => __( 'green', 'smlts' ),
+						'light-green'   => __( 'light-green', 'smlts' ),
+						'yellow'   => __( 'yellow', 'smlts' ),
+						'light-yellow'   => __( 'light-yellow', 'smlts' ),
+						'gray'   => __( 'gray', 'smlts' ),
+						'light-gray'   => __( 'light-gray', 'smlts'),
+						'black'   => __( 'black', 'smlts' ),
+						'orange'   => __( 'orange', 'smlts' ),
+						'violet'   => __( 'violet', 'smlts' ),
+						'red'   => __( 'red', 'smlts' )
+					),
+					'default' => 'blue',
+					'name' => __( 'Color', 'smlts' ),
+					'desc' => __( 'Color of the tooltip.', 'smlts' )
+				),
+				'delay' => array(
+					'type' => 'select',
+					'values' => array(
+						'0'   => __( '0', 'smlts' ),
+						'300'   => __( '300', 'smlts' ),
+						'700'   => __( '700', 'smlts' ),
+					),
+					'default' => '0',
+					'name' => __( 'Delay', 'smlts' ),
+					'desc' => __( 'Delay of the tooltip.', 'smlts' )
+				),
+				'tooltiphead' => array(
+                            'default' => '',
+                            'name' => __( 'Tooltip head', 'smasb' ),
+                            'desc' => __( 'Insert tooltip head.', 'smasb' )
+                ),
+				'text' => array(
+                            'default' => 'move mouse over me',
+                            'name' => __( 'Text', 'smasb' ),
+                            'desc' => __( 'Moving mouse over this text will display tooltip.', 'smasb' )
+                ),
+			)
+		);
+	/*frame*/		
+		$shortcodes['smlts_frame'] = array(
+			'name'     => __( 'LT frame', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom media',
+			'content' =>  __( "Frame content. You can enter text or HTML tags iframes with videos, maps etc. If you want to display an image, enter just URL of the image.", 'smlts' ),             
+			'desc'     => __( 'Nice frames.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-frames" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'picture-o',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_frame' ),
+			'atts' => array(
+				'align' => array(
+					'type' => 'select',
+					'values' => array(
+						'none'   => __( 'none', 'smlts' ),
+						'left'   => __( 'left', 'smlts' ),
+						'right'   => __( 'right', 'smlts' )
+					),
+					'default' => 'none',
+					'name' => __( 'Align', 'smlts' ),
+					'desc' => __( 'Align of the frame.', 'smlts' )
+				),
+				'title' => array(
+                            'default' => '',
+                            'name' => __( 'Title', 'smasb' ),
+                            'desc' => __( 'Title (attribute of the img tag).', 'smasb' )
+						),
+				'alt' => array(
+                            'default' => '',
+                            'name' => __( 'Alt', 'smasb' ),
+                            'desc' => __( 'Alt (attribute of the img tag).', 'smasb' )
+                ),		
+			)
+		);
+
+	
+	/*infobox*/		
+		$shortcodes['smlts_infobox'] = array(
+			'name'     => __( 'LT infobox', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut.", 'smlts' ),             
+			'desc'     => __( 'Nice infoboxes with option to close it.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-info-boxes" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'info-circle',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_infobox' ),
+			'atts' => array(                        
+				'type' => array(
+					'type' => 'image',
+					'default' => 'icon: success',
+					'name' => __( 'Icon', 'smlts' ),
+					'values' => $infobox_icons,
+					'path_small' => plugins_url( 'assets/images/boxes/', SMLTS_PLUGIN_FILE ),
+					'mime' => 'png',
+					'desc' => __( 'Choose an icon from the collection.', 'smlts' )
+				),
+
+				'clickable' => array(
+                                        'type' => 'bool',
+                                        'default' => 'yes',
+                                        'name' => __( 'Close button', 'smlts' ),
+                                        'desc' => __( 'Display button (a little cross) that closes the box?', 'smlts' )
+            ),
+				'boldtext' => array(
+                            'default' => '',
+                            'name' => __( 'Bold text', 'smlts' ),
+                            'desc' => __( 'Bold text', 'smlts' )
+						)
+			)
+		);
+
+	/*colorbox*/		
+		$shortcodes['smlts_colorbox'] = array(
+			'name'     => __( 'LT colorbox', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut.", 'smlts' ),             
+			'desc'     => __( 'Nice infoboxes with option to close it.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-color-boxes" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'info-circle',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_colorbox' ),
+			'atts' => array(                        
+				'title' => array(
+                            'default' => 'Box title',
+                            'name' => __( 'Box title', 'smlts' ),
+                            'desc' => __( 'Box title', 'smlts' )
+						),
+				'color' => array(
+                                        'type' => 'color',
+                                        'values' => array( ),
+                                        'default' => '#333333',
+                                        'name' => __( 'Box color', 'smlts' ), 
+                                        'desc' => __( 'Box color.', 'smlts' )
+                        ),		
+			)
+		);		
+
+	/*note*/		
+		$shortcodes['smlts_note'] = array(
+			'name'     => __( 'LT note', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut.", 'smlts' ),             
+			'desc'     => __( 'Nice infoboxes with option to close it.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-notes" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'info-circle',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_note' ),
+			'atts' => array(                        
+				'color' => array(
+                                        'type' => 'color',
+                                        'values' => array( ),
+                                        'default' => '#fc0',
+                                        'name' => __( 'Box color', 'smlts' ), 
+                                        'desc' => __( 'Box color.', 'smlts' )
+                        ),		
+			)
+		);	
+/*blockquote*/		
+		$shortcodes['smlts_blockquote'] = array(
+			'name'     => __( 'LT blockquote', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom content',
+			'content' =>  __( "", 'smlts' ),             
+			'desc'     => __( 'Beautifully formatted blocks of text.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-blockquote" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'bold',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_blockquote' ),
+			'atts' => array(                        
+				'align' => array(
+						'type' => 'select',
+						'values' => array(
+							'none'   => __( 'none', 'smlts' ),
+							'left'   => __( 'left', 'smlts' ),
+							'right'   => __( 'right', 'smlts' )
+						),
+						'default' => 'none',
+						'name' => __( 'Align', 'smlts' ),
+						'desc' => __( 'Align of the blockquote.', 'smlts' )
+					),	
+				'cite' => array(
+                            'default' => '~John Doe, OurCorp, Ltd',
+                            'name' => __( 'Author', 'smlts' ),
+                            'desc' => __( 'Author of the quote', 'smlts' )
+						),	
+
+			)
+		);	
+/*highlighter*/		
+		$shortcodes['smlts_highlighter'] = array(
+			'name'     => __( 'LT highlighter', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom content',
+			'content' =>  __( "", 'smlts' ),             
+			'desc'     => __( 'Highlight parts of the text.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-highlighters" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'bars',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_highlighter' ),
+			'atts' => array(                        
+				'color' => array(
+								'type' => 'color',
+								'values' => array( ),
+								'default' => '#c0c0c0',
+								'name' => __( 'Color', 'smlts' ), 
+								'desc' => __( 'Color of highighter.', 'smlts' )
+							),	
+				'text_color' => array(
+								'type' => 'color',
+								'values' => array( ),
+								'default' => '#000000',
+								'name' => __( 'Text color', 'smlts' ), 
+								'desc' => __( 'Color of the highlighter text.', 'smlts' )
+                        ),			
+
+			)
+		);			
+
+/*dropcap*/		
+		$shortcodes['smlts_dropcap'] = array(
+			'name'     => __( 'LT dropcap', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom content',
+			'content' =>  __( "", 'smlts' ),             
+			'desc'     => __( 'Start your article with a nice dropcap.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-dropcaps" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'tint',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_dropcap' ),
+			'atts' => array(                        
+				'type' => array(
+					'type' => 'select',
+					'values' => array(
+						'rounded'   => __( 'rounded', 'smlts' ),
+						'rounded-with-ring'   => __( 'rounded-with-ring', 'smlts' ),
+						'simple'   => __( 'simple', 'smlts' )
+					),
+					'default' => 'rounded',
+					'name' => __( 'Type', 'smlts' ),
+					'desc' => __( 'Type of the dropcap.', 'smlts' )
+				),
+				'color' => array(
+					'type' => 'select',
+					'values' => array(
+						'black'   => __( 'black', 'smlts' ),
+						'gray'   => __( 'gray', 'smlts' ),
+						'red'   => __( 'red', 'smlts' ),
+						'orange'   => __( 'orange', 'smlts' ),
+						'magenta'   => __( 'magenta', 'smlts' ),
+						'yellow'   => __( 'yellow', 'smlts' ),
+						'blue'   => __( 'blue', 'smlts' ),
+						'pink'   => __( 'pink', 'smlts' ),
+						'green'   => __( 'green', 'smlts' )
+					),
+					'default' => 'black',
+					'name' => __( 'Color', 'smlts' ),
+					'desc' => __( 'Color of the dropcap.', 'smlts' )
+				),			
+
+			)
+		);			
+
+/*fatcow*/		
+		$shortcodes['smlts_fatcow'] = array(
+			'name'     => __( 'LT service boxes - Fatcow', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Lorem ipsum dolor sit amet.", 'smlts' ),             
+			'desc'     => __( 'Service boxes with icons by Fatcow.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-service-boxes" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'list-alt',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_fatcow' ),
+			'atts' => array(                        
+			'icon' => array(
+					'type' => 'image',
+					'default' => 'image: accept',
+					'name' => __( 'Icon', 'smlts' ),
+					'values' => $icons_fatcow,
+					'path_small' => plugins_url( 'assets/images/services/fatcow/32x32/', SMLTS_PLUGIN_FILE ),
+					'mime' => 'png',
+					'desc' => __( 'Choose an icon from the collection.', 'smlts' )
+				),			
+			'title' => array(
+                            'default' => 'Title',
+                            'name' => __( 'Title', 'smlts' ),
+                            'desc' => __( 'Title of the box.', 'smlts' )
+						),	
+
+			)
+		);	
+
+/*primo*/		
+		$shortcodes['smlts_primo'] = array(
+			'name'     => __( 'LT service boxes - Primo', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Lorem ipsum dolor sit amet.", 'smlts' ),             
+			'desc'     => __( 'Service boxes with icons by Primo.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-service-boxes" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'list-alt',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_primo' ),
+			'atts' => array(                        
+			'icon' => array(
+					'type' => 'image',
+					'default' => 'image: star_full',
+					'name' => __( 'Icon', 'smlts' ),
+					'values' => $icons_primo,
+					'path_small' => plugins_url( 'assets/images/services/primo/48x48/', SMLTS_PLUGIN_FILE ),
+					'mime' => 'png',
+					'desc' => __( 'Choose an icon from the collection.', 'smlts' )
+				),
+			'size' => array(
+					'type' => 'select',
+					'values' => array(
+						'48x48'   => __( '48x48', 'smlts' ),
+						'64x64'   => __( '64x64', 'smlts' )
+					)
+				),			
+			'title' => array(
+                            'default' => 'Title',
+                            'name' => __( 'Title', 'smlts' ),
+                            'desc' => __( 'Title of the box.', 'smlts' )
+						)	
+
+			)
+		);		
+/*tab*/		
+		$shortcodes['smlts_tab'] = array(
+			'name'     => __( 'LT tab', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Tab content", 'smlts' ),             
+			'desc'     => __( 'A part of the tabs shortcode.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-tabs" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'folder',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_tab' ),
+			'atts' => array(
+				'title' => array(
+                            'default' => 'Tab title',
+                            'name' => __( 'Title', 'smlts' ),
+                            'desc' => __( 'Tab title', 'smlts' )
+						),	
+
+			)
+		);	
+/*tabs*/		
+		$shortcodes['smlts_tabs'] = array(
+			'name'     => __( 'LT tabs', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "[%prefix_smlts_tab title=\"Title 1\"]Content 1[/%prefix_smlts_tab]\n[%prefix_smlts_tab title=\"Title 2\"]Content 2[/%prefix_smlts_tab]\n[%prefix_smlts_tab title=\"Title 3\"]Content 3[/%prefix_smlts_tab]", 'smlts' ),             
+			'desc'     => __( 'jQuery tabs shortcode.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-tabs" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'folder',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_tabs' ),
+			'atts' => array(
+				'type' => array(
+					'type' => 'select',
+					'values' => array(
+						'lizatom-tabs-vertical'   => __( 'lizatom-tabs-vertical', 'smlts' ),
+						'lizatom-tabs-horizontal'   => __( 'lizatom-tabs-horizontal', 'smlts' )
+					)
+				),	
+
+			)
+		);			
+
+/*accordion*/		
+		$shortcodes['smlts_accordion'] = array(
+			'name'     => __( 'LT accordion', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Accordion content", 'smlts' ),             
+			'desc'     => __( 'A part of the accordions shortcode.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-accordion" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'align-justify',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_accordion' ),
+			'atts' => array(
+				'title' => array(
+                            'default' => 'Accordion title',
+                            'name' => __( 'Title', 'smlts' ),
+                            'desc' => __( 'Accordion title', 'smlts' )
+						),	
+
+			)
+		);
+/*accordions*/		
+		$shortcodes['smlts_accordions'] = array(
+			'name'     => __( 'LT accordions', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "[%prefix_smlts_accordion title=\"Title 1\"]Content 1[/%prefix_smlts_accordion]\n[%prefix_smlts_accordion title=\"Title 2\"]Content 2[/%prefix_smlts_accordion]\n[%prefix_smlts_accordion title=\"Title 3\"]Content 3[/%prefix_smlts_accordion]", 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-accordion" target="_blank">', '&rarr;</a>' ),             
+			'desc'     => __( 'jQuery accordions shortcode.', 'smlts' ),
+			'icon'     => 'align-justify',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_accordions' ),
+			'atts' => array()
+		);
+
+/*simpletab*/		
+		$shortcodes['smlts_simpletab'] = array(
+			'name'     => __( 'LT simpletab', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Simpletab content", 'smlts' ),             
+			'desc'     => __( 'A part of the simpletabs shortcode.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-simple-tabs" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'folder',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_simpletab' ),
+			'atts' => array(
+				'title' => array(
+                            'default' => __( 'Simpletab title', 'smlts' ),
+                            'name' => __( 'Simpletab', 'smlts' ),
+                            'desc' => __( 'Simpletab title', 'smlts' )
+						),	
+
+			)
+		);
+/*simpletabs*/		
+		$shortcodes['smlts_simpletabs'] = array(
+			'name'     => __( 'LT simpletabs', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "[%prefix_smlts_simpletab title=\"Tab name 1\"] Tab content 1 [/%prefix_smlts_simpletab]\n[%prefix_smlts_simpletab title=\"Tab name 2\"] Tab content 2 [/%prefix_smlts_simpletab]\n[%prefix_smlts_simpletab title=\"Tab name 3\"] Tab content 3 [/%prefix_smlts_simpletab]", 'smlts' ),             
+			'desc'     => __( 'jQuery tabs shortcode.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-simple-tabs" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'folder',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_simpletabs' ),
+			'atts' => array(
+				'style' => array(
+					'type' => 'select',
+					'values' => array(
+						'1'   => __( '1', 'smlts' ),
+						'2'   => __( '2', 'smlts' ),
+						'3'   => __( '3', 'smlts' )
+					)
+				),	
+
+			)
+		);		
+/*spoiler*/		
+		$shortcodes['smlts_spoiler'] = array(
+			'name'     => __( 'LT Spoiler', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "Spoiler content", 'smlts' ),             
+			'desc'     => __( 'Shoertcode known from FAQ sections.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-spoilers" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'align-justify',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_spoiler' ),
+			'atts' => array(
+				'title' => array(
+                            'default' => 'Spoiler title',
+                            'name' => __( 'Spoiler title', 'smlts' ),
+                            'desc' => __( 'Spoiler title', 'smlts' )
+						),	
+
+			)
+		);
+/*css3accordion*/		
+		$shortcodes['smlts_css3accordion'] = array(
+			'name'     => __( 'LT CSS3 accordion', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( "<p>test content</p>", 'smlts' ),             
+			'desc'     => __( 'Part of beautiful CSS3 accordion.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-css3-accordion" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'align-justify',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_css3accordion' ),
+			'atts' => array(
+				'title' => array(
+                            'default' => 'Accordion title must be unique',
+                            'name' => __( 'CSS3 acordion title', 'smlts' ),
+                            'desc' => __( 'Accordion title must be unique', 'smlts' )
+						),	
+
+			)
+		);
+/*css3accordions*/		
+		$shortcodes['smlts_css3accordions'] = array(
+			'name'     => __( 'LT CSS3 accordions', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( htmlspecialchars('[sm_smlts_css3accordion title="Accordion title must be unique1"]<p>test content 1</p>[/sm_smlts_css3accordion][sm_smlts_css3accordion title="Accordion title must be unique2"]<p>test content 2</p>[/sm_smlts_css3accordion][sm_smlts_css3accordion title="Accordion title must be unique3"]<p>test content 3</p>[/sm_smlts_css3accordion]'), 'smlts'),             
+			'desc'     => __( 'Beautiful CSS3 accordions.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-css3-accordion" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'align-justify',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_css3accordions' ),
+			'atts' => array(
+				'type' => array(
+					'type' => 'select',
+					'values' => array(
+						'lizatom-css3accordion-horizontal'   => __( 'lizatom-css3accordion-horizontal', 'smlts' ),
+						'lizatom-css3accordion-vertical'   => __( 'lizatom-css3accordion-vertical', 'smlts' )
+					),
+					'default' => 'rounded',
+					'name' => __( 'Type', 'smlts' ),
+					'desc' => __( 'Type of the dropcap.', 'smlts' )
+				),
+				'color' => array(
+                                        'type' => 'color',
+                                        'values' => array( ),
+                                        'default' => '#000000',
+                                        'name' => __( 'Color', 'smlts' ), 
+                                        'desc' => __( 'Color of the accordion. Hexadecimal: #ffffff or name: white.', 'smlts' )
+                        ),
+				'title' => array(
+                            'default' => 'Accordion title',
+                            'name' => __( 'Title of the accordion', 'smlts' ),
+                            'desc' => __( 'Title of the accordion', 'smlts' )
+						),	
+
+			)
+		);		
+
+/*portfolio*/		
+		$shortcodes['smlts_portfolio'] = array(
+			'name'     => __( 'LT Portfolio', 'smlts' ),
+			'type'     => 'single',
+			'group'    => 'lizatom box',
+			'content' =>  __('', 'smlts'),             
+			'desc'     => __( 'Create filtered portfolio from featured images.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-animated-portfolio" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'th',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_portfolio' ),
+			'atts' => array(
+				'id' => array(
+                            'default' => 'unique-id-of-portfolio',
+                            'name' => __( 'ID', 'smlts' ),
+                            'desc' => __( 'Unique identifier of the portfolio.', 'smlts' )
+						),
+				'animation' => array(
+					'type' => 'select',
+					'values' => array(
+						'1'   => __( '1', 'smlts' ),
+						'2'   => __( '2', 'smlts' ),
+						'3'   => __( '3', 'smlts' )
+					),
+					'default' => '1',
+					'name' => __( 'Animation', 'smlts' ),
+					'desc' => __( 'Choose filtering animation.', 'smlts' )
+				),
+				'columns' => array(
+					'type' => 'select',
+					'values' => array(
+						'1'   => __( '1', 'smlts' ),
+						'2'   => __( '2', 'smlts' ),
+						'3'   => __( '3', 'smlts' )
+					),
+					'default' => '1',
+					'name' => __( 'Columns', 'smlts' ),
+					'desc' => __( 'Number of columns.', 'smlts' )
+				),
+				'target' => array(
+					'type' => 'select',
+					'values' => array(
+						'_self'   => __( '_self', 'smlts' ),
+						'_blank'   => __( '_blank', 'smlts' )
+					),
+					'default' => '_self',
+					'name' => __( 'Target attribute', 'smlts' ),
+					'desc' => __( 'For opening link in new widow, choose _blank.', 'smlts' )
+				),
+				'categories' => array(
+                            'default' => '',
+                            'name' => __( 'Categories', 'smlts' ),
+                            'desc' => __( 'Categories to choose featured images separated by comma. Example: 1,2,4,6', 'smlts' )
+						),	
+
+			)
+		);		
+/*pricing table*/		
+		$shortcodes['smlts_pricing_table'] = array(
+			'name'     => __( 'LT pricing table', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom box',
+			'content' =>  __( htmlspecialchars($table_code), 'smlts' ),             
+			'desc'     => __( 'Insert beautiful pricing table.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="httpshttps://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-pricing-table" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'table',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_pricing_table' ),
+			'atts' => array()
+		);
+		
+		/*cols*/
+		$shortcodes['smlts_cols'] = array(
+			'name'     => __( 'LT columns wrapper', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom content',
+			'content' =>  __( "Here goes columns of the row.", 'smlts' ),             
+			'desc'     => __( 'CSS columns.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-columns" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'th',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_cols' ),			
+		);
+		/*col*/		
+		$shortcodes['smlts_col'] = array(
+			'name'     => __( 'LT column', 'smlts' ),
+			'type'     => 'wrap',
+			'group'    => 'lizatom content',
+			'content' =>  __( "Here goes content of the column.", 'smlts' ),             
+			'desc'     => __( 'CSS columns.', 'smlts' ),
+			'note'     => sprintf( __( 'Read more on this shortcode %s here %s', 'sm' ), '<a href="https://lizatom.com/wiki/shortcodes-master-lizatom/#lizatom-shortcodes-shortcodes-overview-columns" target="_blank">', '&rarr;</a>' ),
+			'icon'     => 'th',
+			'function' => array( 'Shortcodes_Master_Smlts_Shortcodes', 'smlts_col' ),
+			'atts' => array(
+				'type' => array(
+					'type' => 'select',
+					'values' => array(
+						'lts-one-half'   => __( 'one-half', 'smlts' ),
+						'lts-one-third'   => __( 'one-third', 'smlts' ),
+						'lts-one-fourth'   => __( 'one-fourth', 'smlts' ),
+						'lts-one-fifth'   => __( 'one-fifth', 'smlts' ),
+						'lts-one-sixth'   => __( 'one-sixth', 'smlts' ),
+						'lts-two-third'   => __( 'two-third', 'smlts' ),
+						'lts-two-fifth'   => __( 'two-fifth', 'smlts' ),
+						'lts-three-fifth'   => __( 'three-fifth', 'smlts' ),
+						'lts-four-fifth'   => __( 'four-fifth', 'smlts' ),
+						'lts-five-sixth'   => __( 'five-sixth', 'smlts' ),						
+						'lts-one-half lts-col-last'   => __( 'one-half last', 'smlts' ),
+						'lts-one-third lts-col-last'   => __( 'one-third last', 'smlts' ),
+						'lts-one-fourth lts-col-last'   => __( 'one-fourth last', 'smlts' ),
+						'lts-one-fifth lts-col-last'   => __( 'one-fifth last', 'smlts' ),
+						'lts-one-sixth lts-col-last'   => __( 'one-sixth last', 'smlts' ),
+						'lts-two-third lts-col-last'   => __( 'two-third last', 'smlts' ),
+						'lts-two-fifth lts-col-last'   => __( 'two-fifth last', 'smlts' ),
+						'lts-three-fifth lts-col-last'   => __( 'three-fifth last', 'smlts' ),
+						'lts-four-fifth lts-col-last'   => __( 'four-fifth last', 'smlts' ),
+						'lts-five-sixth lts-col-last'   => __( 'five-sixth last', 'smlts' ),
+					),
+					'default' => 'one-half',
+					'name' => __( 'Type', 'smlts' ),
+					'desc' => __( 'Type of the column.', 'smlts' )
+				)
+			)
+		);
+		
+		return $shortcodes;
+
+	}
+
+}
+
+new Shortcodes_Master_Smlts;
